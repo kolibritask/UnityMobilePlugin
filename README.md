@@ -5,3 +5,5 @@ In detail, there are already working library for each mobile platform. We includ
 This mean with this approach, we can create a working Unity plugin package (.unitypackage) later.
 
 The example uses Playbasis mobile SDK.
+
+It uses Unity 5.3.2f1.
