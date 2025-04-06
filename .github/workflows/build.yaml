@@ -1,0 +1,63 @@
+name: Kolibri game build
+
+on:
+  push:
+
+jobs:
+  build:
+    name: Build for Android and iOS
+    runs-on: ubuntu-latest
+    container:
+      image: unityci/editor:2022.3.5f1-linux-il2cpp-android
+    strategy:
+      matrix: # to build both platforms in parallel
+        targetPlatform: [Android, iOS] 
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Cache Library
+        uses: actions/cache@v3
+        with:
+          path: Library
+          key: Library-${{ matrix.targetPlatform }}
+          restore-keys: |
+            Library-
+      
+      - name: Setup .NET for Unity (if needed)
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '5.x'
+
+      # this is a better option for *THIS* project, 
+      # but since the task required a custom build it's commented out
+      # - uses: game-ci/unity-builder@v3
+      #   with:
+      #     unityVersion: 2022.3.5f1
+      #     targetPlatform: Android
+
+      - name: Build project
+        run: |
+          .github/scripts/build.sh ${{ matrix.targetPlatform }}
+
+      - name: Upload ${{ matrix.targetPlatform }} build artefacts to Azure Blob Storage
+        uses: azure/CLI@v1
+        with:
+          azcliversion: 2.30.0
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          DESTINATION: unity_mobile_plugin/builds/${{ matrix.targetPlatform }}/${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+          # in case the build is of a tag the destination path
+          # is like  unity_mobile_plugin/builds/android-or-ios/v1.2.3/
+          # but in case its anthing else
+          # its is like unity_mobile_plugin/builds/android-or-ios/abc123asfasf_git_commit_hash/ 
+
+        run: |
+          echo "Uploading build to Azure Blob Storage..."
+          az storage blob upload-batch \
+            --account-name $AZURE_STORAGE_ACCOUNT \
+            --destination ${{ env.DESTINATION }} \
+            --source build/${{ matrix.targetPlatform }} \
+            --auth-mode key
