@@ -8,43 +8,32 @@ jobs:
     name: Build for Android and iOS
     runs-on: ubuntu-latest
     container:
-      image: unityci/editor:2022.3.5f1-linux-il2cpp-android
+      image: unityci/editor:ubuntu-6000.0.45f1-android-3.1.0
     strategy:
       matrix: # to build both platforms in parallel
         targetPlatform: [Android, iOS] 
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Cache Library
-        uses: actions/cache@v3
-        with:
-          path: Library
-          key: Library-${{ matrix.targetPlatform }}
-          restore-keys: |
-            Library-
-      
-      - name: Setup .NET for Unity (if needed)
-        uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '5.x'
-
-      # this is a better option for *THIS* project, 
-      # but since the task required a custom build it's commented out
-      # - uses: game-ci/unity-builder@v3
-      #   with:
-      #     unityVersion: 2022.3.5f1
-      #     targetPlatform: Android
+        uses: actions/checkout@v3     
 
       - name: Build project
+        # Trigger a custom build backend script
         run: |
           .github/scripts/build.sh ${{ matrix.targetPlatform }}
 
+      - name: Install Dependency-Check
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dependency-check
+
+      - name: Run Dependency-Check
+        run: |
+          dependency-check --project "UnityProject" --scan ./Assets --out ./dependency-check-report
+      # Perhaps this is a bad config for a Unity project, but the point is there
+
       - name: Upload ${{ matrix.targetPlatform }} build artefacts to Azure Blob Storage
         uses: azure/CLI@v1
-        with:
-          azcliversion: 2.30.0
         env:
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
           AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
@@ -53,11 +42,12 @@ jobs:
           # is like  unity_mobile_plugin/builds/android-or-ios/v1.2.3/
           # but in case its anthing else
           # its is like unity_mobile_plugin/builds/android-or-ios/abc123asfasf_git_commit_hash/ 
-
-        run: |
-          echo "Uploading build to Azure Blob Storage..."
-          az storage blob upload-batch \
-            --account-name $AZURE_STORAGE_ACCOUNT \
-            --destination ${{ env.DESTINATION }} \
-            --source build/${{ matrix.targetPlatform }} \
-            --auth-mode key
+        with:
+          azcliversion: 2.30.0
+          inlineScript: |
+            echo "Uploading build to Azure Blob Storage..."
+            az storage blob upload-batch \
+              --account-name $AZURE_STORAGE_ACCOUNT \
+              --destination ${{ env.DESTINATION }} \
+              --source build/${{ matrix.targetPlatform }} \
+              --auth-mode key
